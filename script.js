@@ -477,6 +477,7 @@ const products = [
  
 ];
 
+/* Removed marketplace, account, checkout, preference, and storage features.
 const currencyRates = {
   USD: { rate: 1, symbol: "$" },
   NGN: { rate: 1550, symbol: "₦" },
@@ -1212,5 +1213,229 @@ if (mobileMenuButton && navigationLinks) {
 renderProducts();
 renderTopSellers();
 renderResaleShowcase();
+renderCart();
+*/
+
+let currentFilter = "All";
+let searchTerm = "";
+
+const productGrid = document.getElementById("productGrid");
+const emptyState = document.getElementById("emptyState");
+const cart = [];
+const cartCount = document.getElementById("cartCount");
+const cartDrawer = document.getElementById("cartDrawer");
+const cartItems = document.getElementById("cartItems");
+const cartItemsLabel = document.getElementById("cartItemsLabel");
+const cartTotal = document.getElementById("cartTotal");
+const overlay = document.getElementById("overlay");
+const toast = document.getElementById("toast");
+
+function formatPrice(price) {
+  return `$${Number(price).toFixed(2)}`;
+}
+
+function productPriceMarkup(product) {
+  return product.originalPrice
+    ? `<span class="product-price"><del>${formatPrice(product.originalPrice)}</del> <strong>Free</strong></span>`
+    : `<span class="product-price">${formatPrice(product.price)}</span>`;
+}
+
+function getUnitPrice(product, quantity) {
+  if (product.originalPrice) return 0;
+  return quantity >= product.bulkMin ? product.price * (1 - product.bulkDiscount) : product.price;
+}
+
+function renderProducts() {
+  const filtered = products.filter(product => {
+    const matchesCategory = currentFilter === "All" || product.category === currentFilter;
+    const matchesSearch = product.name.toLowerCase().includes(searchTerm) ||
+      product.category.toLowerCase().includes(searchTerm);
+    return matchesCategory && matchesSearch;
+  });
+
+  productGrid.innerHTML = filtered.map(product => `
+    <article class="product-card" onclick="openProductDetails(${product.id})" tabindex="0" role="button" aria-label="View details for ${product.name}">
+      <div class="product-image">
+        <img src="${product.image}" alt="${product.name}">
+        <span class="product-badge">${product.badge}</span>
+      </div>
+      <div class="product-content">
+        <span class="product-category">${product.category}</span>
+        <h3>${product.name}</h3>
+        <div class="rating">★★★★★ <span>${product.rating} (${product.reviews})</span></div>
+        <div class="product-bottom">${productPriceMarkup(product)}<button class="add-cart-btn" onclick="event.stopPropagation(); addToCart(${product.id})" aria-label="Add ${product.name} to cart">+</button></div>
+      </div>
+    </article>
+  `).join("");
+
+  emptyState.style.display = filtered.length ? "none" : "block";
+}
+
+function openProductDetails(id) {
+  const product = products.find(item => item.id === id);
+  if (!product) return;
+  document.getElementById("productDetailsContent").innerHTML = `
+    <img class="details-image" src="${product.image}" alt="${product.name}">
+    <div class="details-copy">
+      <span class="product-category">${product.category}</span>
+      <h2>${product.name}</h2>
+      <div class="rating">★★★★★ <span>${product.rating} (${product.reviews} reviews)</span></div>
+      <p>${product.description || "A quality product selected for Russell Shop."}</p>
+      <strong class="details-price">${productPriceMarkup(product)}</strong>
+      <p class="bulk-note">Buy ${product.bulkMin} or more and save ${product.bulkDiscount * 100}%.</p>
+      <label class="quantity-label">Quantity <input id="detailsQuantity" type="number" min="1" value="1"></label>
+      <button class="btn btn-primary btn-block" onclick="addDetailsToCart(${product.id})">Add to cart</button>
+    </div>`;
+  document.getElementById("productDetailsModal").classList.add("active");
+  const quantityInput = document.getElementById("detailsQuantity");
+  const priceDisplay = document.querySelector(".details-price");
+  quantityInput.addEventListener("input", () => {
+    const quantity = Math.max(1, Number(quantityInput.value) || 1);
+    quantityInput.value = quantity;
+    const unitPrice = getUnitPrice(product, quantity);
+    priceDisplay.innerHTML = product.originalPrice
+      ? `<del>${formatPrice(product.originalPrice)}</del> Free`
+      : `${formatPrice(unitPrice)} each${quantity >= product.bulkMin ? " (bulk price)" : ""}`;
+  });
+}
+
+function closeProductDetails() {
+  document.getElementById("productDetailsModal").classList.remove("active");
+}
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 1800);
+}
+
+function addToCart(id) {
+  addProductQuantity(id, 1);
+  showToast("Product added to cart");
+}
+
+function addDetailsToCart(id) {
+  const quantityInput = document.getElementById("detailsQuantity");
+  const quantity = Math.max(1, Number(quantityInput.value) || 1);
+  addProductQuantity(id, quantity);
+  closeProductDetails();
+  showToast(`${quantity} item${quantity === 1 ? "" : "s"} added to cart`);
+}
+
+function addProductQuantity(id, quantity) {
+  const existing = cart.find(item => item.id === id);
+  if (existing) existing.quantity += quantity;
+  else cart.push({ id, quantity });
+  renderCart();
+}
+
+function changeQuantity(id, amount) {
+  const item = cart.find(cartItem => cartItem.id === id);
+  if (!item) return;
+  item.quantity += amount;
+  if (item.quantity <= 0) cart.splice(cart.indexOf(item), 1);
+  renderCart();
+}
+
+function renderCart() {
+  const totalItems = cart.reduce((total, item) => total + item.quantity, 0);
+  cartCount.textContent = totalItems;
+  cartItemsLabel.textContent = `${totalItems} item${totalItems === 1 ? "" : "s"}`;
+
+  if (!cart.length) {
+    cartItems.innerHTML = "<div class=\"empty-cart\"><h3>Your cart is empty</h3><p>Add products to get started.</p></div>";
+    cartTotal.textContent = formatPrice(0);
+    return;
+  }
+
+  let total = 0;
+  cartItems.innerHTML = cart.map(item => {
+    const product = products.find(productItem => productItem.id === item.id);
+    if (!product) return "";
+    const unitPrice = getUnitPrice(product, item.quantity);
+    const savings = (product.price - unitPrice) * item.quantity;
+    total += unitPrice * item.quantity;
+    return `<div class="cart-item">
+      <img src="${product.image}" alt="${product.name}">
+      <div><h4>${product.name}</h4><small>${product.originalPrice ? "Free" : `${formatPrice(unitPrice)} each${savings ? ` · You save ${formatPrice(savings)}` : ""}`}</small>
+        <div class="qty-controls"><button onclick="changeQuantity(${product.id}, -1)">−</button><span>${item.quantity}</span><button onclick="changeQuantity(${product.id}, 1)">+</button></div>
+      </div>
+      <button class="remove-item" onclick="changeQuantity(${product.id}, -${item.quantity})">Remove</button>
+    </div>`;
+  }).join("");
+  cartTotal.textContent = formatPrice(total);
+}
+
+function openCart() {
+  cartDrawer.classList.add("active");
+  overlay.classList.add("active");
+  cartDrawer.setAttribute("aria-hidden", "false");
+}
+
+function closeCart() {
+  cartDrawer.classList.remove("active");
+  overlay.classList.remove("active");
+  cartDrawer.setAttribute("aria-hidden", "true");
+}
+
+function checkout() {
+  if (!cart.length) return showToast("Your cart is empty");
+  cart.length = 0;
+  renderCart();
+  closeCart();
+  showToast("Please contact the admin to complete your checkout.");
+}
+
+document.querySelectorAll(".filter-btn").forEach(button => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".filter-btn").forEach(btn => btn.classList.remove("active"));
+    button.classList.add("active");
+    currentFilter = button.dataset.filter;
+    renderProducts();
+  });
+});
+
+document.querySelectorAll(".category-card").forEach(button => {
+  button.addEventListener("click", () => {
+    currentFilter = button.dataset.category;
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.filter === currentFilter);
+    });
+    document.getElementById("products").scrollIntoView({ behavior: "smooth" });
+    renderProducts();
+  });
+});
+
+document.getElementById("searchToggle").addEventListener("click", () => {
+  const panel = document.getElementById("searchPanel");
+  panel.classList.toggle("active");
+  if (panel.classList.contains("active")) document.getElementById("searchInput").focus();
+});
+
+document.getElementById("searchInput").addEventListener("input", event => {
+  searchTerm = event.target.value.trim().toLowerCase();
+  renderProducts();
+});
+
+const mobileMenuButton = document.getElementById("mobileMenuBtn");
+const navigationLinks = document.getElementById("navLinks");
+
+if (mobileMenuButton && navigationLinks) {
+  mobileMenuButton.addEventListener("click", () => {
+    const isOpen = navigationLinks.classList.toggle("active");
+    mobileMenuButton.setAttribute("aria-expanded", String(isOpen));
+  });
+  navigationLinks.querySelectorAll("a").forEach(link => link.addEventListener("click", () => {
+    navigationLinks.classList.remove("active");
+    mobileMenuButton.setAttribute("aria-expanded", "false");
+  }));
+}
+
+document.getElementById("cartBtn").addEventListener("click", openCart);
+document.getElementById("closeCart").addEventListener("click", closeCart);
+document.getElementById("checkoutBtn").addEventListener("click", checkout);
+overlay.addEventListener("click", closeCart);
+
+renderProducts();
 renderCart();
 
